@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>عارض الوثائق - Qanouni-AI</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        :root {
+            --bg-primary: #0a0a0f;
+            --bg-secondary: #12121a;
+            --bg-card: #1a1a24;
+            --text-primary: #e4e4e7;
+            --text-secondary: #a1a1aa;
+            --accent-color: #667eea;
+            --accent-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            --highlight-color: #ffeaa7;
+            --highlight-border: #f39c12;
+            --border-color: rgba(255,255,255,0.1);
+        }
+        
+        body.light-mode {
+            --bg-primary: #f8fafc;
+            --bg-secondary: #ffffff;
+            --bg-card: #ffffff;
+            --text-primary: #1e293b;
+            --text-secondary: #64748b;
+            --border-color: rgba(0,0,0,0.1);
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+        }
+        
+        /* Header */
+        .viewer-header {
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border-color);
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            backdrop-filter: blur(10px);
+        }
+        
+        .doc-title {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+        
+        .doc-title i {
+            font-size: 1.5rem;
+            background: var(--accent-gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .doc-title h1 {
+            font-size: 1.2rem;
+            font-weight: 600;
+        }
+        
+        .doc-meta {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+        
+        .header-actions {
+            display: flex;
+            gap: 0.5rem;
+        }
+        
+        .action-btn {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            padding: 0.6rem 1.2rem;
+            border-radius: 8px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            transition: all 0.3s ease;
+            font-size: 0.9rem;
+        }
+        
+        .action-btn:hover {
+            background: var(--accent-color);
+            color: white;
+            transform: translateY(-2px);
+        }
+        
+        .action-btn.close-btn:hover {
+            background: #ef4444;
+        }
+        
+        /* Main Content */
+        .viewer-container {
+            display: flex;
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 2rem;
+            gap: 2rem;
+        }
+        
+        /* Sidebar / TOC */
+        .viewer-sidebar {
+            width: 280px;
+            flex-shrink: 0;
+            position: sticky;
+            top: 80px;
+            height: fit-content;
+        }
+        
+        .toc-card {
+            background: var(--bg-card);
+            border-radius: 12px;
+            padding: 1.5rem;
+            border: 1px solid var(--border-color);
+        }
+        
+        .toc-title {
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .toc-list {
+            list-style: none;
+            max-height: 60vh;
+            overflow-y: auto;
+        }
+        
+        .toc-item {
+            padding: 0.6rem 0.8rem;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            transition: all 0.2s ease;
+            margin-bottom: 0.3rem;
+            border-right: 3px solid transparent;
+        }
+        
+        .toc-item:hover {
+            background: rgba(102, 126, 234, 0.1);
+            color: var(--text-primary);
+        }
+        
+        .toc-item.active, .toc-item.highlighted {
+            background: rgba(243, 156, 18, 0.2);
+            border-right-color: var(--highlight-border);
+            color: var(--text-primary);
+        }
+        
+        /* Document Content */
+        .viewer-content {
+            flex: 1;
+            background: var(--bg-card);
+            border-radius: 16px;
+            padding: 2.5rem;
+            border: 1px solid var(--border-color);
+            line-height: 1.9;
+            font-size: 1.05rem;
+        }
+        
+        .chunk-section {
+            margin-bottom: 1.5rem;
+            padding: 1rem;
+            border-radius: 8px;
+            transition: all 0.3s ease;
+        }
+        
+        .chunk-section.highlighted {
+            background: linear-gradient(120deg, rgba(255, 234, 167, 0.3) 0%, rgba(253, 203, 110, 0.2) 100%);
+            border-right: 4px solid var(--highlight-border);
+            padding: 1.5rem;
+            animation: pulse-highlight 2s ease-in-out;
+        }
+        
+        @keyframes pulse-highlight {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(243, 156, 18, 0.4); }
+            50% { box-shadow: 0 0 30px 15px rgba(243, 156, 18, 0); }
+        }
+        
+        .highlight-badge {
+            display: inline-block;
+            background: var(--accent-gradient);
+            color: white;
+            padding: 0.3rem 0.8rem;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            margin-bottom: 0.8rem;
+        }
+        
+        /* Loading State */
+        .loading-state {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 50vh;
+            gap: 1rem;
+        }
+        
+        .loading-state i {
+            font-size: 3rem;
+            color: var(--accent-color);
+        }
+        
+        /* Error State */
+        .error-state {
+            text-align: center;
+            padding: 3rem;
+            color: #ef4444;
+        }
+        
+        /* Print Styles */
+        @media print {
+            .viewer-header, .viewer-sidebar, .action-btn { display: none !important; }
+            .viewer-content { 
+                border: none; 
+                box-shadow: none;
+                padding: 0;
+            }
+            body { background: white; color: black; }
+            .chunk-section.highlighted {
+                border: 2px solid #f39c12;
+                background: #fffbeb;
+            }
+        }
+        
+        /* Responsive */
+        @media (max-width: 900px) {
+            .viewer-container { flex-direction: column; padding: 1rem; }
+            .viewer-sidebar { width: 100%; position: relative; top: 0; }
+        }
+    </style>
+</head>
+<body>
+    <header class="viewer-header">
+        <div class="doc-title">
+            <i class="fa-solid fa-file-lines"></i>
+            <div>
+                <h1 id="doc-name">جاري التحميل...</h1>
+                <span class="doc-meta" id="doc-meta"></span>
+            </div>
+        </div>
+        <div class="header-actions">
+            <button class="action-btn" onclick="copyDocument()">
+                <i class="fa-solid fa-copy"></i>
+                نسخ
+            </button>
+            <button class="action-btn" onclick="printDocument()">
+                <i class="fa-solid fa-print"></i>
+                طباعة
+            </button>
+            <button class="action-btn close-btn" onclick="window.close()">
+                <i class="fa-solid fa-xmark"></i>
+                إغلاق
+            </button>
+        </div>
+    </header>
+    
+    <main class="viewer-container">
+        <aside class="viewer-sidebar">
+            <div class="toc-card">
+                <div class="toc-title">
+                    <i class="fa-solid fa-list"></i>
+                    فهرس الأجزاء
+                </div>
+                <ul class="toc-list" id="toc-list">
+                    <!-- Populated by JS -->
+                </ul>
+            </div>
+        </aside>
+        
+        <article class="viewer-content" id="document-content">
+            <div class="loading-state">
+                <i class="fa-solid fa-circle-notch fa-spin"></i>
+                <p>جاري تحميل الوثيقة...</p>
+            </div>
+        </article>
+    </main>
+    
+    <script>
+        // API URL
+        const API_URL = window.location.hostname === 'localhost'
+            ? 'http://localhost:8000/api'
+            : '/api';
+        
+        // Get params from URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const documentId = urlParams.get('doc');
+        const highlightChunk = parseInt(urlParams.get('chunk')) || null;
+        
+        // Theme sync
+        const savedTheme = localStorage.getItem('theme');
+        if (savedTheme === 'light') {
+            document.body.classList.add('light-mode');
+        }
+        
+        // Load document
+        async function loadDocument() {
+            if (!documentId) {
+                showError('لم يتم تحديد الوثيقة');
+                return;
+            }
+            
+            try {
+                const token = localStorage.getItem('token');
+                const chunkParam = highlightChunk ? `?highlight_chunk=${highlightChunk}` : '';
+                
+                const response = await fetch(`${API_URL}/documents/${documentId}/full${chunkParam}`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                if (!response.ok) {
+                    throw new Error('فشل في تحميل الوثيقة');
+                }
+                
+                const data = await response.json();
+                renderDocument(data);
+                
+            } catch (error) {
+                showError(error.message);
+            }
+        }
+        
+        function renderDocument(data) {
+            // Update header
+            document.getElementById('doc-name').textContent = data.document.filename.replace('.txt', '');
+            document.getElementById('doc-meta').textContent = 
+                `${data.document.category || 'عام'} • ${data.chunks.length} جزء`;
+            document.title = data.document.filename + ' - عارض الوثائق';
+            
+            // Render TOC
+            const tocList = document.getElementById('toc-list');
+            tocList.innerHTML = '';
+            
+            data.chunks.forEach((chunk, i) => {
+                const li = document.createElement('li');
+                li.className = 'toc-item' + (chunk.highlighted ? ' highlighted' : '');
+                li.textContent = `الجزء ${chunk.index}`;
+                li.onclick = () => scrollToChunk(chunk.index);
+                tocList.appendChild(li);
+            });
+            
+            // Render content
+            const contentEl = document.getElementById('document-content');
+            let html = '';
+            
+            data.chunks.forEach(chunk => {
+                html += `
+                    <div class="chunk-section ${chunk.highlighted ? 'highlighted' : ''}" 
+                         id="chunk-${chunk.index}">
+                        ${chunk.highlighted ? '<span class="highlight-badge">🔍 الجزء المقتبس</span>' : ''}
+                        <p>${chunk.content.replace(/\n/g, '<br>')}</p>
+                    </div>
+                `;
+            });
+            
+            contentEl.innerHTML = html;
+            
+            // Auto-scroll to highlighted chunk
+            if (highlightChunk) {
+                setTimeout(() => {
+                    const highlightedEl = document.getElementById(`chunk-${highlightChunk}`);
+                    if (highlightedEl) {
+                        highlightedEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
+                }, 300);
+            }
+        }
+        
+        function scrollToChunk(index) {
+            const el = document.getElementById(`chunk-${index}`);
+            if (el) {
+                el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+        }
+        
+        function showError(message) {
+            document.getElementById('document-content').innerHTML = `
+                <div class="error-state">
+                    <i class="fa-solid fa-triangle-exclamation" style="font-size: 3rem;"></i>
+                    <h2>خطأ</h2>
+                    <p>${message}</p>
+                </div>
+            `;
+        }
+        
+        function copyDocument() {
+            const content = document.getElementById('document-content').innerText;
+            navigator.clipboard.writeText(content).then(() => {
+                alert('تم نسخ الوثيقة إلى الحافظة');
+            }).catch(() => {
+                alert('فشل النسخ');
+            });
+        }
+        
+        function printDocument() {
+            window.print();
+        }
+        
+        // Init
+        loadDocument();
+    </script>
+</body>
+</html>

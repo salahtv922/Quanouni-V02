@@ -1,0 +1,16 @@
+# Vercel Ignore
+data/
+*.rar
+*.zip
+.git/
+__pycache__/
+venv/
+*.pyc
+logs/
+tmp/
+scripts/
+tests/
+backend/test_qa.py
+backend/create_admin.py
+*.pdf
+*.md
