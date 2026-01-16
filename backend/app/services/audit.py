@@ -26,7 +26,8 @@ class AuditService:
                 "details": details or {},
                 "resource": resource,
                 "ip_address": ip_address,
-                "timestamp": datetime.utcnow().isoformat()
+                # "timestamp": datetime.utcnow().isoformat()  <-- Let DB handle created_at via DEFAULT or use created_at key
+                "created_at": datetime.utcnow().isoformat()
             }
             
             # Using fire-and-forget approach or ensure it awaits depending on critical nature
@@ -35,8 +36,12 @@ class AuditService:
             return data
             
         except Exception as e:
-            print(f"[AUDIT LOG ERROR] Failed to log action '{action}': {e}")
-            # We do NOT raise the exception to avoid breaking the user flow
+            # RLS Policy violations are common in dev/anon mode, don't spam terminal
+            error_msg = str(e)
+            if "42501" in error_msg or "violates row-level security" in error_msg:
+                pass # Silently ignore RLS errors for now
+            else:
+                print(f"[AUDIT LOG WARNING] Could not log action '{action}': {e}")
             return None
 
 audit_service = AuditService()

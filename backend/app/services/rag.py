@@ -456,6 +456,7 @@ class RAGService:
         """
         وضع المحامي: توليد مذكرات قانونية احترافية باستخدام هيكلية المرافعات الذهبية
         Advocate Mode: Generate professional legal pleadings
+        Enhanced v2.1: Few-Shot + Interactive Sources + OCR Cleaning
         """
         facts = case_data.get('facts', '')
         charges = " ".join(case_data.get('charges', []))
@@ -463,8 +464,12 @@ class RAGService:
         court = case_data.get('court', 'المحكمة المختصة')
         case_number = case_data.get('case_number', '')
         
+        # Extract defense strategy if available
+        defense_strategy = case_data.get('defense_strategy', {})
+        main_defense = defense_strategy.get('main_argument', '')
+        secondary_args = defense_strategy.get('secondary_arguments', [])
+        
         # 1. Smart Extraction from Case Data
-        # Combine facts and charges for context extraction
         case_context = f"التهمة: {charges}. الوقائع: {facts}"
         search_query = self._extract_search_query(case_context)
         print(f"[Pleading] Smart Query: {search_query}")
@@ -473,93 +478,130 @@ class RAGService:
         docs, metas = self._retrieve(search_query, top_k=top_k)
         
         # 3. Reranking using Gemini
-        # Select best 5 sources relevant to the case facts
         reranked = rerank_with_gemini(case_context, docs, top_k=5)
         final_docs = [r[0] for r in reranked]
         final_metas = []
         
-        # Match metadata back to reranked docs
         doc_map = {d: m for d, m in zip(docs, metas)}
         for d in final_docs: final_metas.append(doc_map.get(d, {}))
         
-        # 4. Build Legal Context (Full Text - No Truncation)
+        # 4. Build Legal Context with CLEAN source names (TRUNCATED to avoid timeout)
         context = ""
         for i, (doc, meta) in enumerate(zip(final_docs, final_metas), 1):
             source_name = meta.get('filename', f'مصدر {i}').replace('.txt', '')
+            # Clean Cyrillic OCR artifacts
+            source_name = re.sub(r'[\u0400-\u04FF]+', 'على', source_name)
+            source_name = source_name.replace(' на ', ' على ').replace(' ha ', ' على ')
+            source_name = source_name.replace('_', ' ')
+            
             source_type = "اجتهاد قضائي" if "قرار" in source_name or "اجتهاد" in source_name else "نص قانوني"
-            context += f"\n\n### [{source_type} - مصدر {i}: {source_name}]\n{doc}\n"
+            # Truncate each doc to 1500 chars to avoid timeout
+            doc_truncated = doc[:1500] + "..." if len(doc) > 1500 else doc
+            context += f"\n\n### [{source_type}: {source_name}]\n{doc_truncated}\n"
+        
+        # 5. Few-Shot Golden Example (Expanded with Eloquence)
+        golden_example = """
+═══════════════════════════════════════
+📜 نموذج مرافعة ذهبية (للتعلم)
+═══════════════════════════════════════
+**المسألة:** هل شهادة المجني عليه وحدها كافية للإدانة؟
+
+**القاعدة:** من المستقر عليه قضاءً وفقاً للمادة 212 من قانون الإجراءات الجزائية أن "الإثبات في المواد الجزائية حر"، غير أن المحكمة العليا قررت في اجتهادها الراسخ أن "الشك يُفسَّر دائماً لمصلحة المتهم".
+
+**التحليل:**
+1. **تناقض في الوصف:** زعم المجني عليه أن الجاني "طويل القامة"، في حين أن المتهم ماثل أمامكم وقامته لا تتجاوز 160 سم، مما ينفي الصلة.
+2. **استحالة الحدوث:** التوقيت المصرح به (21:00) يتزامن مع تواجد المتهم في مقر عمله المثبت بكشف الحضور.
+3. **غياب السند المادي:** خلت أوراق الملف من أي محجوزات أو بصمات تؤكد الرواية.
+
+**النتيجة:** وأمام هذا الوهن في الأدلة، لا يسع عدالتكم إلا القضاء بالبراءة، تأسيساً على أن الأحكام الجزائية تُبنى على الجزم واليقين لا على الشك والتخمين.
+═══════════════════════════════════════
+"""
     
-        # 5. Professional "Golden Pleading" Prompt
-        prompt = f"""أنت محامٍ جزائري خبير "نابغ" (Top-Tier Lawyer) أمام المحكمة العليا ومجلس الدولة.
-مهمتك: صياغة **{pleading_type}** احترافية جداً تحاكي "المرافعات الذهبية" من حيث البلاغة، الحجة الدامغة، والهيكلة الصارمة.
+        # 6. Professional Prompt with Few-Shot + Case Data
+        prompt = f"""أنت محامٍ جزائري "نابغ" (Top-Tier Lawyer) تترافع أمام **{court}**.
+مهمتك: صياغة **{pleading_type}** بأسلوب قانوني رفيع، يحاكي بلاغة كبار المحامين.
+
+{golden_example}
 
 ═══════════════════════════════════════
 📋 ملف القضية
 ═══════════════════════════════════════
-• الجهة القضائية: {court}
-• رقم الملف: {case_number}
-• الأطراف: المتهم {defendant_name} ضد النيابة العامة/الضحية
-• التهمة: {charges if charges else 'غير محددة'}
+• **الجهة القضائية:** {court}
+• **المتهم:** {defendant_name}
+• **التهمة:** {charges}
+{"• **استراتيجية الدفاع:** " + main_defense if main_defense else ""}
 
-📝 وقائع القضية (كما وردت في الملف):
+📝 **الوقائع (Fact Pattern):**
 {facts}
 
 ═══════════════════════════════════════
 📚 الذخيرة القانونية (السند)
 ═══════════════════════════════════════
-استخدم هذه النصوص بذكاء لتدعيم دفوعك (يجب ذكر رقم المادة واسم القانون بدقة). لا تذكر نصوصاً لم ترد هنا إلا إذا كنت متأكداً منها 100%:
 {context}
 
 ═══════════════════════════════════════
-⚖️ الهيكلة الذهبية المطلوبة (إلزامية)
+⚖️ الهيكلة المطلوبة (إلزامية العناوين)
 ═══════════════════════════════════════
-يجب أن تتبع مذكرتك الهيكل التالي بدقة:
+1. **الديباجة:** (إلى السيد رئيس {court}...)
+2. **أولاً: الوقائع:** (سرد موجز ومرقم).
+3. **ثانياً: الإجراءات:** (فقرة واحدة).
+4. **ثالثاً: المناقشة القانونية (القلب):**
+   - استخدم عنوان فرعي: `### 1. في الشكل`
+   - استخدم عنوان فرعي: `### 2. في الموضوع`
+   - داخل الموضوع، استخدم نقاط واضحة `-` لكل دفع قانوني.
+   - استخدم البنية: **الدفـع** ← **السند القانوني (المادة)** ← **التطبيق على الوقائع**.
+5. **رابعاً: الطلبات:** (قائمة نقطية مرقمة).
 
-1. **الديباجة الاحترافية**: (إلى السيد رئيس المحكمة... لفائدة المتهم... ضد...)
-2. **أولاً: موجز الوقائع**: (صياغة قانونية محايدة ومركزة للوقائع).
-3. **ثانياً: الإجراءات**: (ذكر الإجراءات المتخذة باختصار).
-4. **ثالثاً: المناقشة القانونية (قلب المرافعة)**:
-   أ- **في الشكل (الدفوع الشكلية)**: (تحقق من: بطلان الإجراءات، التقادم، الاختصاص - إن وجدت ثغرات).
-   ب- **في الموضوع (الدفوع الموضوعية)**:
-      - مناقشة أركان التهمة (المادي والمعنوي) وتفنيدها.
-      - تحليل أدلة الإثبات وكشف التناقضات.
-      - استثمار النصوص القانونية {context} لصالح الموكل.
-      - الاستشهاد بالاجتهاد القضائي (إن وجد في المصادر).
-5. **رابعاً: الطلبات الختامية**: (أصلياً: البراءة/الإلغاء، احتياطياً: التخفيف/إعادة التكييف).
+⚠️ **تنبيهات**:
+- **التنسيق:** استخدم العناوين `###` والنقاط `-` لتجميل النص وجعله مقروءاً.
+- **الاقتباس:** ضع نصوص المواد بين «...».
 
-═══════════════════════════════════════
-💡 توجيهات الأسلوب ("اللمسة الذهبية")
-═══════════════════════════════════════
-- استخدم لغة قانونية جزيلة ورصينة (مثال: "حيث أن الثابت..."، "ولما كان من المقرر...").
-- كن هجومياً في الحق، مفنداً لأدلة الخصم بالحجة والبرهان.
-- اربط النص القانوني بالواقعة مباشرة ("حيث أن المادة X تشترط... وحيث أن موكلي لم يقم بـ...").
-- التزم بأسلوب {style}.
-
-ابدأ صياغة المرافعة فوراً:"""
+ابدأ المرافعة فوراً:"""
 
         try:
+            print(f"[Pleading] Sending prompt of length: {len(prompt)} chars")
             response = generate_with_retry(self.model, prompt)
             pleading_text = response.text
+            
+            # --- POST-PROCESSING (Cleaning) ---
+            # 1. Clean Cyrillic/Russian OCR artifacts (common in scraped Algerian laws)
+            pleading_text = re.sub(r'[\u0400-\u04FF]+', '', pleading_text)
+            # 2. Remove any remaining bracketed placeholders if LLM hallucinated them
+            pleading_text = re.sub(r'\[(?!مصدر|نص|اجتهاد).*?\]', '', pleading_text)
+            
+            print(f"[Pleading] SUCCESS - Generated {len(pleading_text)} chars")
         except Exception as e:
-            print(f"Pleading generation failed: {e}")
+            print(f"[Pleading] FAILED: {type(e).__name__}: {e}")
             pleading_text = f"""# مذكرة {pleading_type}
 
 ⚠️ عذراً، لم أتمكن من إتمام صياغة المذكرة بسبب خطأ تقني.
+**الخطأ:** {type(e).__name__}: {str(e)[:200]}
 
 ## المعلومات المتاحة:
 - **المتهم**: {defendant_name}
 - **التهمة**: {charges}
-- **الوقائع**: {facts[:200]}...
-
-## المصادر القانونية المستخرجة:
-{context}
 
 يرجى إعادة المحاولة."""
+
+
+        # Build sources with document_id and chunk_index for interactivity
+        sources_list = []
+        for d, m in zip(final_docs, final_metas):
+            title = m.get('filename', 'Source').replace('.txt', '')
+            title = re.sub(r'[\u0400-\u04FF]+', 'على', title)
+            title = title.replace(' на ', ' على ').replace(' ha ', ' على ')
+            title = title.replace('_', ' ')
+            sources_list.append({
+                "title": title,
+                "filename": m.get('filename'),
+                "document_id": m.get("document_id"),
+                "chunk_index": m.get("chunk_index")
+            })
 
         return {
             "pleading": pleading_text,
             "metadata": {"total_sources": len(docs), "pleading_type": pleading_type},
-            "sources": [{"filename": m.get('filename')} for m in final_metas[:10]]
+            "sources": sources_list
         }
 
 
