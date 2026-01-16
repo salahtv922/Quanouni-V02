@@ -10,7 +10,7 @@
 backend/.env
 
 # Legal Data (Copyright / Size)
-----data/
+data/
 
 # === PYTHON ===
 __pycache__/
