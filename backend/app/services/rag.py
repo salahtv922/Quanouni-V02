@@ -7,7 +7,8 @@ from typing import Optional
 from app.core.config import settings
 from app.services.embedding import get_embedding
 from app.services.vector_store import query_chroma
-import google.generativeai as genai
+# SDK removed to reduce bundle size for serverless (Vercel 250MB limit)
+# import google.generativeai as genai
 
 
 
@@ -172,33 +173,44 @@ def rerank_with_gemini(query: str, chunks: list[str], top_k: int = 3) -> list[tu
 
 def generate_gemini_flash(prompt: str):
     """
-    Dedicated function for Generation using Gemini Flash Latest (via SDK).
+    Dedicated function for Generation using Gemini Flash Latest (via REST API).
     Used for Consult and Pleading modes to ensure high-quality reasoning.
+    Refactored from SDK to REST API to reduce bundle size for Vercel.
     """
     try:
         if not settings.GEMINI_API_KEY:
              raise ValueError("GEMINI_API_KEY not set")
-             
-        genai.configure(api_key=settings.GEMINI_API_KEY)
         
-        # Use the confirmed working model
-        MODEL_NAME = "models/gemini-flash-latest"
-        model = genai.GenerativeModel(MODEL_NAME)
+        # Use the confirmed working model via REST API
+        MODEL_NAME = "gemini-2.0-flash"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL_NAME}:generateContent?key={settings.GEMINI_API_KEY}"
         
-        # print(f"[Gemini] Using specialized model: {MODEL_NAME}") # Reduced log noise
+        headers = {"Content-Type": "application/json"}
+        payload = {
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {
+                "temperature": 0.3, # Low temp for precise legal reasoning
+                "maxOutputTokens": 8192
+            }
+        }
         
-        response = model.generate_content(
-            prompt,
-            generation_config=genai.types.GenerationConfig(
-                temperature=0.3, # Low temp for precise legal reasoning
-                max_output_tokens=8192
-            )
-        )
-        return GenerationResponse(text=response.text)
+        resp = requests.post(url, headers=headers, json=payload, timeout=120)
+        
+        if resp.status_code == 200:
+            result = resp.json()
+            try:
+                text = result['candidates'][0]['content']['parts'][0]['text']
+                return GenerationResponse(text=text)
+            except (KeyError, IndexError):
+                print(f"[Gemini Flash] Bad Response format: {result}")
+                raise ValueError("Gemini Flash response parsing failed")
+        else:
+            print(f"[Gemini Flash] Error {resp.status_code}: {resp.text[:500]}")
+            raise Exception(f"Gemini Flash API Error: {resp.status_code}")
         
     except Exception as e:
-        print(f"[Gemini SDK] Error: {e}")
-        print("[Gemini] Falling back to standard REST API...")
+        print(f"[Gemini Flash] REST Error: {e}")
+        print("[Gemini Flash] Falling back to Groq/standard API...")
         return generate_with_retry(None, prompt)
 
 class RAGService:
