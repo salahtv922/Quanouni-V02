@@ -1,6 +1,6 @@
 # 📘 DOCUMENTATION TECHNIQUE COMPLÈTE - QANOUNI-AI (NIBRASSE)
-**Version : 2.1 (Smart Legal Edition - Interactive)**
-**Date : 16 Janvier 2026**
+**Version : 2.2 (Hybrid Intelligence Edition)**
+**Date : 17 Janvier 2026**
 **Auteur : Assistant IA Antigravity**
 
 ---
@@ -47,7 +47,10 @@ Le système repose sur une architecture moderne **Client-Serveur** découplée :
 *   **Backend (Python / FastAPI)** :
     *   Gère la logique métier, l'IA, et les connexions BDD.
     *   Utilise `FastAPI` pour des performances élevées (Asynchrone).
-    *   Intègre les modèles LLM via API (Google Gemini 2.0 Flash / Groq Llama 3).
+    *   Utilise `FastAPI` pour des performances élevées (Asynchrone).
+    *   **Architecture Hybride** :
+        *   **Groq (Llama 3.3)** : Pour l'extraction rapide, le routing et les tâches structurelles (Vitesse).
+        *   **Google Gemini 2.0 Flash** : Pour le Raisonnement Juridique profond (Plaidoirie, Consultation) et le Reranking.
 *   **Base de Données (Supabase / PostgreSQL)** :
     *   Stocke les documents, les vecteurs (pgvector), et les utilisateurs.
     *   Gère la recherche vectorielle via RPC.
@@ -251,5 +254,22 @@ L'interface est conçue pour être "State-of-the-Art" sans la complexité de Rea
 *   **Support du Protocole Local (`file://`)** :
     *   Modification de `document-viewer.html` pour détecter l'environnement.
     *   Si ouvert localement, l'API pointe explicitement vers `http://localhost:8000` au lieu de `/api` relatif.
-*   **Visualiseur de Documents** :
     *   Résolution du problème "Failed to fetch" grâce aux deux corrections ci-dessus.
+
+## 11. RECENT UPDATES (v2.2) - 17 Jan 2026
+
+### 11.1. Architecture "Cerveau Hybride" (Hybrid Brain) 🧠
+*   **Problème** : Llama 3.3 (via Groq) est rapide mais manque de "profondeur" pour l'argumentation juridique complexe. Gemini 3 Pro est limité par les quotas.
+*   **Solution** : Implémentation d'une architecture hybride sélective :
+    *   **Llama 3.3 (Groq)** : Gère l'extraction de mots-clés (`_extract_search_query`) et les tâches simples. C'est le "Réflexe Rapide".
+    *   **Gemini 2.0 Flash (`models/gemini-flash-latest`)** : Gère la rédaction des **Mémorandums (Mode 3)** et des **Consultations (Mode 2)**. C'est le "Raisonnement Profond".
+
+### 11.2. Amélioration du Mode Avocat (Plaidoirie)
+*   **Nouveau Moteur** : Passage de Llama à Gemini Flash.
+*   **Résultats** :
+    *   Meilleur usage du syllogisme juridique (Majeure/Mineure/Conclusion).
+    *   Capacité à distinguer "l'intention criminelle" (Ruckn Ma3nawi) avec plus de nuance.
+    *   Citation plus précise des articles de loi.
+
+### 11.3. Optimisation des Quotas
+*   **Fix 429** : Mise en place d'un fallback intelligent vers `gemini-flash-latest` (Stable) au lieu des modèles expérimentaux (`exp` ou `3-pro`) qui ont des quotas nuls sur les comptes gratuits.

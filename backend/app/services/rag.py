@@ -7,6 +7,8 @@ from typing import Optional
 from app.core.config import settings
 from app.services.embedding import get_embedding
 from app.services.vector_store import query_chroma
+import google.generativeai as genai
+
 
 
 @dataclass
@@ -168,13 +170,44 @@ def rerank_with_gemini(query: str, chunks: list[str], top_k: int = 3) -> list[tu
         # Avoid printing full exception if it contains Arabic
         return [(chunk, 0.5) for chunk in chunks[:top_k]]
 
+def generate_gemini_flash(prompt: str):
+    """
+    Dedicated function for Generation using Gemini Flash Latest (via SDK).
+    Used for Consult and Pleading modes to ensure high-quality reasoning.
+    """
+    try:
+        if not settings.GEMINI_API_KEY:
+             raise ValueError("GEMINI_API_KEY not set")
+             
+        genai.configure(api_key=settings.GEMINI_API_KEY)
+        
+        # Use the confirmed working model
+        MODEL_NAME = "models/gemini-flash-latest"
+        model = genai.GenerativeModel(MODEL_NAME)
+        
+        # print(f"[Gemini] Using specialized model: {MODEL_NAME}") # Reduced log noise
+        
+        response = model.generate_content(
+            prompt,
+            generation_config=genai.types.GenerationConfig(
+                temperature=0.3, # Low temp for precise legal reasoning
+                max_output_tokens=8192
+            )
+        )
+        return GenerationResponse(text=response.text)
+        
+    except Exception as e:
+        print(f"[Gemini SDK] Error: {e}")
+        print("[Gemini] Falling back to standard REST API...")
+        return generate_with_retry(None, prompt)
+
 class RAGService:
     def __init__(self):
         # No SDK configuration needed.
         self.model = None # We don't use the SDK model object anymore
 
     def _retrieve(self, query, filters=None, top_k=20):
-        # 1. Vector Search
+        # ... (unchanged) ...
         try:
             query_embedding = get_embedding(query, is_query=True)
             vector_results = query_chroma(query_embedding, n_results=top_k, where=filters)
@@ -219,7 +252,6 @@ class RAGService:
             final_docs = [r[0] for r in reranked]
             final_metas = []
             for d in final_docs:
-                # Find meta again (inefficient but safe)
                 try: 
                     idx = docs.index(d)
                     final_metas.append(metas[idx])
@@ -400,7 +432,9 @@ class RAGService:
 ⚠️ **تنويه**: هذه استشارة قانونية أولية مبنية على المعلومات المقدمة. يُنصح بمراجعة محامٍ متخصص لدراسة ملف القضية كاملاً."""
 
         try:
-            response = generate_with_retry(self.model, prompt)
+            # UPGRADE: Use Gemini Flash for better consultation reasoning too
+            print(f"[Consult] Using Gemini Flash for superior reasoning...")
+            response = generate_gemini_flash(prompt)
             consultation_text = response.text
         except Exception as e:
             print(f"Consultation generation failed: {e}")
@@ -560,7 +594,8 @@ class RAGService:
 
         try:
             print(f"[Pleading] Sending prompt of length: {len(prompt)} chars")
-            response = generate_with_retry(self.model, prompt)
+            # USE DEDICATED GEMINI FUNCTION INSTEAD OF GENERIC ONE
+            response = generate_gemini_flash(prompt)
             pleading_text = response.text
             
             # --- POST-PROCESSING (Cleaning) ---
