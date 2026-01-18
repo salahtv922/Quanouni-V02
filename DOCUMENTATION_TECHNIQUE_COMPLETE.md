@@ -1,6 +1,6 @@
 # 📘 DOCUMENTATION TECHNIQUE COMPLÈTE - QANOUNI-AI (NIBRASSE)
-**Version : 2.2 (Hybrid Intelligence Edition)**
-**Date : 17 Janvier 2026**
+**Version : 2.4 (Jurisprudence Fix + Reranking)**
+**Date : 18 Janvier 2026**
 **Auteur : Assistant IA Antigravity**
 
 ---
@@ -273,3 +273,50 @@ L'interface est conçue pour être "State-of-the-Art" sans la complexité de Rea
 
 ### 11.3. Optimisation des Quotas
 *   **Fix 429** : Mise en place d'un fallback intelligent vers `gemini-flash-latest` (Stable) au lieu des modèles expérimentaux (`exp` ou `3-pro`) qui ont des quotas nuls sur les comptes gratuits.
+
+## 12. RECENT UPDATES (v2.3) - 18 Jan 2026
+
+### 12.1. Refactoring pour Compatibilité Vercel 🚀
+*   **Problème** : Le SDK `google-generativeai` (Python) dépasse la limite de 250 MB pour les Serverless Functions de Vercel.
+*   **Solution** : Remplacement du SDK par des appels **REST API** directs via la librairie `requests` (déjà incluse).
+    *   La fonction `generate_gemini_flash()` dans `rag.py` utilise maintenant l'endpoint REST `generativelanguage.googleapis.com`.
+    *   Le modèle utilisé est `gemini-2.0-flash` (stable et performant).
+*   **Résultat** : Réduction drastique de la taille du bundle, déploiement Vercel réussi.
+
+### 12.2. Architecture LLM Finale
+| Tâche | Modèle | Méthode |
+| :--- | :--- | :--- |
+| Extraction Mots-clés | Llama 3.3 (Groq) | REST API |
+| Reranking | Gemini 2.0 Flash | REST API |
+| **Consultation (Mode 2)** | **Gemini 2.0 Flash** | REST API |
+| **Plaidoirie (Mode 3)** | **Gemini 2.0 Flash** | REST API |
+| Recherche Jurisprudence (Mode 4) | Gemini 2.0 Flash | REST API |
+
+### 12.3. Fichiers Nettoyés
+*   `test_gemini_pleading.py` (script de test supprimé)
+*   `fix_audit_rls.sql`, `open_audit_rls.sql`, `update_audit_schema.sql` (patches SQL temporaires)
+
+## 13. RECENT UPDATES (v2.4) - 18 Jan 2026
+
+### 13.1. Correction du Mode Jurisprudence (Mode 4) ⚖️
+*   **Problème** : Le filtre de catégorie utilisait `jurisprudence` au lieu de `jurisprudence_full` (valeur utilisée dans la BDD).
+*   **Solution** : 
+    *   Ajout de `jurisprudence_full` à la liste des catégories cibles.
+    *   Ajout d'un message clair si aucune jurisprudence n'est trouvée.
+    *   Logs de débogage pour tracer le nombre de documents trouvés.
+
+### 13.2. Amélioration du Prompt (Anti-Hallucination)
+*   **Problème** : Le LLM inventait des numéros de décisions (ex: "Arrêt 1234") qui n'existaient pas.
+*   **Solution** : Ajout d'un avertissement explicite dans le prompt :
+    > "⚠️ Ne pas inventer de numéros de décisions. Si non mentionné, écrire 'غير مذكور'."
+
+### 13.3. Reranking pour Jurisprudence
+*   Ajout de `rerank_with_gemini()` pour filtrer les jurisprudences non pertinentes.
+*   Exemple : Recherche "بطلان الاعتراف" (confession) filtrait désormais les décisions sur "الاعتراف بالملكية" (reconnaissance de propriété).
+
+### 13.4. Note sur les Quotas Gemini 🔴
+*   Le modèle `gemini-2.0-flash` a un quota de **0** sur les comptes gratuits.
+*   Fallback automatique vers **Groq (Llama 3.3)** en cas d'erreur 429.
+*   **Prochaine étape** : Intégration de **OpenRouter** pour accès à tous les modèles via une seule API.
+
+

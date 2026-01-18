@@ -653,9 +653,7 @@ class RAGService:
 
 
     def search_jurisprudence(self, legal_issue: str, chamber=None, top_k=20):
-        # Jurisprudence Mode - Filter by both Supreme Court and Conseil d'État
-        # Note: RPC match_documents does not support list filters, so we fetch all and filter in Python
-        # filters = {"category": ["jurisprudence", "jurisprudence_conseil_etat"]}
+        # Jurisprudence Mode - Filter by Supreme Court and Conseil d'État
         
         # If chamber is specified, append it to query
         search_query = legal_issue
@@ -667,20 +665,52 @@ class RAGService:
         
         docs = []
         metas = []
-        target_categories = ["jurisprudence", "jurisprudence_conseil_etat"]
+        # FIX: Include all jurisprudence categories (database uses 'jurisprudence_full')
+        target_categories = ["jurisprudence", "jurisprudence_full", "jurisprudence_conseil_etat"]
         
         for d, m in zip(raw_docs, raw_metas):
             if m.get("category") in target_categories:
                 docs.append(d)
                 metas.append(m)
         
+        # Debug: Log how many jurisprudence docs were found
+        print(f"[Jurisprudence] Found {len(docs)} matching documents out of {len(raw_docs)} total retrieved")
+        
         # Slice to requested top_k
         docs = docs[:top_k]
         metas = metas[:top_k]
         
-        # Limit context to avoid token limit (Groq max ~12K tokens)
-        truncated_docs = [d[:1200] for d in docs[:5]]  # 5 docs, 1200 chars each
-        context = "\n".join([f"Arrêt {i+1}: {d}" for i, d in enumerate(truncated_docs)])
+        # If no jurisprudence docs found, inform the user clearly
+        if len(docs) == 0:
+            return {
+                "analysis": "⚠️ لم يتم العثور على اجتهادات قضائية مطابقة للمسألة المطروحة في قاعدة البيانات الحالية. يُرجى تجربة صياغة أخرى للسؤال أو التحقق من إدخال الاجتهادات.",
+                "metadata": {"total_sources": 0},
+                "sources": []
+            }
+        
+        # RERANKING: Use Gemini to filter only jurisprudence relevant to the legal issue
+        # This prevents unrelated cases (e.g., property law when searching for confession validity)
+        try:
+            print(f"[Jurisprudence] Reranking {len(docs)} documents for relevance...")
+            reranked = rerank_with_gemini(legal_issue, docs, top_k=5)
+            
+            # Rebuild docs/metas based on reranked order
+            reranked_docs = [r[0] for r in reranked]
+            doc_to_meta = {d: m for d, m in zip(docs, metas)}
+            reranked_metas = [doc_to_meta.get(d, {}) for d in reranked_docs]
+            
+            docs = reranked_docs
+            metas = reranked_metas
+            print(f"[Jurisprudence] After reranking: {len(docs)} documents retained")
+        except Exception as e:
+            print(f"[Jurisprudence] Reranking failed: {e}, using original order")
+            # Fallback: just take top 5
+            docs = docs[:5]
+            metas = metas[:5]
+        
+        # Limit context to avoid token limit
+        truncated_docs = [d[:1500] for d in docs[:5]]  # 5 docs, 1500 chars each
+        context = "\n".join([f"--- قرار {i+1} ({metas[i].get('filename', 'غير معروف')}) ---\n{d}" for i, d in enumerate(truncated_docs)])
         
         prompt = f"""بصفتك باحثاً في الاجتهاد القضائي (المحكمة العليا ومجلس الدولة).
 المسألة: {legal_issue}
@@ -688,23 +718,28 @@ class RAGService:
 {context}
 
 المطلوب:
-1. استخرج المبادئ القانونية بدقة.
+1. استخرج المبادئ القانونية بدقة من القرارات أعلاه فقط.
 2. لكل مبدأ، **يجب** إدراج "نص المبدأ" كما ورد في القرار بين علامتي اقتباس.
-3. اذكر رقم القرار وتاريخه والجهة المصدرة (المحكمة العليا أو مجلس الدولة) إن وجد في النص.
+3. اذكر رقم القرار وتاريخه إن وجد في النص، **أو اكتب "غير مذكور"**.
 4. وضح هل الاجتهاد مستقر أم هناك تناقض.
+
+⚠️ **تحذير مهم**: لا تختلق أرقام قرارات أو تواريخ أو مراجع غير موجودة في النصوص أعلاه. إذا لم تجد رقم القرار، اكتب صراحة: "رقم القرار: غير مذكور في النص".
 
 التنسيق المطلوب:
 - **المبدأ:** [شرح المبدأ]
-- **النص المقتبس:** "...[النص]..."
-- **المرجع:** قرار رقم [X] بتاريخ [Y] - [الجهة] (إن وجد)"""
+- **النص المقتبس:** "...[النص الحرفي من القرار]..."
+- **المرجع:** قرار رقم [X] بتاريخ [Y] - [الجهة] (أو "غير مذكور")"""
 
-        response = generate_with_retry(self.model, prompt)
+        # UPGRADE: Use Gemini Flash for better Arabic legal understanding
+        response = generate_gemini_flash(prompt)
         
         # Include text snippets in sources for UI
         enriched_sources = []
         for doc, meta in zip(docs[:5], metas[:5]):
              enriched_sources.append({
                  "filename": meta.get('filename'),
+                 "document_id": meta.get('document_id'),
+                 "chunk_index": meta.get('chunk_index', 1),
                  "relevance_score": 0.9,
                  "snippet": doc[:200] + "..." # Snippet for UI
              })
