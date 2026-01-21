@@ -1,0 +1,13 @@
+fastapi
+python-dotenv
+supabase
+python-multipart
+requests
+pydantic
+pydantic-settings
+rank_bm25
+passlib[bcrypt]
+bcrypt==3.2.2
+python-jose
+groq
+uvicorn
